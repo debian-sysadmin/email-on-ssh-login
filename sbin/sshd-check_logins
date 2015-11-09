@@ -4,20 +4,30 @@
 Description: 	This perl script checks if there are logins
 		coming in from STDIN (rsyslog).
 		It then will mail these to a recipient address.
-Revision:	01
-Date:		205-11-08
-AUthor:		Johannes Wissen
+Revision:	03
+Date:		205-11-09
 ################################################################
 =cut
 
 use Net::SMTP;
 use Sys::Hostname;
-use Time::HiRes qw( usleep ualarm gettimeofday tv_interval );
+use Time::HiRes qw(usleep ualarm gettimeofday tv_interval );
 use Config::Simple;
+use Digest::MD5 qw(md5 md5_hex md5_base64);
+use File::Touch;
+
+use strict;
+use warnings;
 
 ################################################################
 ##all variables will be taken from the specified config file####
-my $cfg_filename  = "../etc/sshd-check_logins.config_";
+## enter the path as absolute path ... 			    ####
+my $cfg_filename  	= "/root/etc/sshd-check_logins.config_";
+# we want to search for the strings "Accepted public.../passwor...
+my @strings_to_search	= ("Accepted password","Accepted publickey");
+my @strings_to_ign	= ("::1","localhost","127.0.0.1"); # we don't need localhost logins
+my $tmp_folder		= "/tmp";
+my $ign_repeat_time	= 300;
 ################################################################
 
    $cfg_filename  .= hostname;
@@ -55,11 +65,47 @@ sub sende_mail()                                   # should be called like this:
         return "1";
 }
 
-my @lines = "";
+# this function returns the age of a specified file in seconds.
+sub file_age_s {
+    if ( -e $_[0] ) {
+	my $now 	= time();
+	my @stats 	= stat($_[0]);
+	return ($now - $stats[9]);
+    }
+    else {
+	return "inv";
+    }
+}
+
+sub ignore {
+    my $subfolder = $tmp_folder . "/.sshd-check_logins";
+    unless(-e $subfolder or mkdir $subfolder) {
+        die "Unable to create $subfolder\n";
+    }
+
+    my $absfile = $subfolder . "/" . $_[0];
+
+    if ( -e $absfile ) {
+	if(file_age_s($absfile) > $ign_repeat_time) {
+		my $ntemp = unlink($absfile);
+		$ntemp = touch($absfile);
+		return 0; # FALSE    
+	}
+	else {
+		return 1; # TRUE 
+	}
+    }
+    else {
+	my $notemp = touch($absfile);
+	return 0; # FALSE    	
+    }
+}
+
+my @lines 	 = "";
 my $time_elapsed = 0.0;
+my $start 	 = Time::HiRes::gettimeofday();
 
-my $start = Time::HiRes::gettimeofday();
-
+# 1st step: get all lines from STDIN
 while ( <STDIN> ) {
     while (index($_, "\n") != -1)  {
 	my $length = index($_, "\n");
@@ -71,19 +117,28 @@ while ( <STDIN> ) {
 	last if ($time_elapsed >0.5); # after 500 ms, we quit 
 }
 
+# 2nd step: check if these lines contain a search string, if they contain an ignore string, they will be ignored
 my @usernames;
+my $sp = join("|", @strings_to_search);
+my $ip = join("|", @strings_to_ign);
+
 foreach (@lines) {
-    if ($_ =~ m/Accepted p/ ) {
+    if ( $_ =~ /$sp/  && $_ !~ /$ip/ ) {
 	my $pos1 = index ($_, " for ");
 	my $pos2 = index ($_, " from ");
 	push(@usernames, substr($_, $pos1+5, ($pos2 - $pos1-5) ) );
     }
 }
 
-if (@usernames != "") {
-    my $mailsubject  = "SSH Login on $hostname for USER ";
-       $mailsubject .= $usernames[0];    
-    &sende_mail(\@lines, $recipient, $mailsubject);
-}
 
+# 3rd step mail, if there are relevant lines and the ignore flag = false (to avoid spamming)
+if (scalar @usernames > 0) {
+    my 	$mailsubject  = "SSH Login on $hostname for USER ";
+       	$mailsubject .= $usernames[0];    
+    my	$checksum = md5_hex($mailsubject);
+
+	if ( !ignore($checksum) ) {
+	    &sende_mail(\@lines, $recipient, $mailsubject);
+	}
+}
 
