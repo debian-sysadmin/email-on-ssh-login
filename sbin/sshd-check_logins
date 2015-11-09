@@ -1,1 +1,89 @@
-/root/sbin/sshd-check_logins
+#!/usr/bin/perl
+=general_information
+################################################################
+Description: 	This perl script checks if there are logins
+		coming in from STDIN (rsyslog).
+		It then will mail these to a recipient address.
+Revision:	01
+Date:		205-11-08
+AUthor:		Johannes Wissen
+################################################################
+=cut
+
+use Net::SMTP;
+use Sys::Hostname;
+use Time::HiRes qw( usleep ualarm gettimeofday tv_interval );
+use Config::Simple;
+
+################################################################
+##all variables will be taken from the specified config file####
+my $cfg_filename  = "../etc/sshd-check_logins.config_";
+################################################################
+
+   $cfg_filename  .= hostname;
+my $cfg 	   = new Config::Simple($cfg_filename);
+
+    my $recipient 	= $cfg->param('recipient');
+    my $smtp_server	= $cfg->param('smtp_server');
+    my $sender		= $cfg->param('sender');
+    my $hostname 	= hostname;
+    
+sub sende_mail()                                   # should be called like this:: &sende_mail(\@text,recipient,subject)
+{
+        my $mailServer  = $smtp_server;            # 
+        my $absender    = $sender;	      	   # 
+        my $betreff     = $_[2];                   # 
+        my $empfaenger  = $_[1];                   # 
+
+        my $smtp = Net::SMTP->new($mailServer);    #
+           $smtp->mail($absender);                 # 
+        my $test = $smtp->to($empfaenger);
+        if ( !$test ) {
+                return "0";
+        }                 			#
+        $smtp->data();                          #
+                                                #
+        $smtp->datasend("Subject: $betreff\n"); # 
+                                                # 
+        $smtp->datasend("To: $empfaenger\n");   # 
+                                                #
+        $smtp->datasend("\n");                  # 
+                                                # 
+        $smtp->datasend("@{$_[0]}");
+        $smtp->dataend(); # 
+        $smtp->quit;      # 
+        return "1";
+}
+
+my @lines = "";
+my $time_elapsed = 0.0;
+
+my $start = Time::HiRes::gettimeofday();
+
+while ( <STDIN> ) {
+    while (index($_, "\n") != -1)  {
+	my $length = index($_, "\n");
+	push(@lines, substr($_, 0, $length+1) );
+	$_ = substr($_, $length+1);	
+    }
+	my $now = Time::HiRes::gettimeofday();
+	$time_elapsed = $now - $start;
+	last if ($time_elapsed >0.5); # after 500 ms, we quit 
+}
+
+my @usernames;
+foreach (@lines) {
+    if ($_ =~ m/Accepted p/ ) {
+	my $pos1 = index ($_, " for ");
+	my $pos2 = index ($_, " from ");
+	push(@usernames, substr($_, $pos1+5, ($pos2 - $pos1-5) ) );
+    }
+}
+
+if (@usernames != "") {
+    my $mailsubject  = "SSH Login on $hostname for USER ";
+       $mailsubject .= $usernames[0];    
+    &sende_mail(\@lines, $recipient, $mailsubject);
+}
+
+

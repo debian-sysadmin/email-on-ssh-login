@@ -1,1 +1,4 @@
-/root/etc/sshd-check_logins.config_HOSTNAME
+recipient	admin@admin.xx
+smtp_server	localhost
+sender		root@hostname.xx
+
