@@ -2,3 +2,8 @@ recipient	admin@admin.xx
 smtp_server	localhost
 sender		root@hostname.xx
 
+xmpp_sender	xxx@xx.xx
+xmpp_hostname	xyz.de
+xmpp_pw		xyzxyz
+xmpp_recipient	xxx@xx.de
+
