@@ -1,5 +1,5 @@
-## email-on-ssh-login
-Scripts which will send an eMail after a SSH login event (initialized directly by rsyslogd).
+## email-or-xmpp-message-on-ssh-login
+Scripts which will send an eMail or an xmpp message after a SSH login event (initialized directly by rsyslogd).
 
 How it works:
 * put the rsyslog config file (from etc/rsyslog.d/ of this repo) into your /etc/rsyslog.d folder.
